@@ -192,14 +192,22 @@ class CutoffIdentifier:
         """
         cursor = self.db.cursor()
         
-        # Find closed communities
+        # Find closed communities using flexible pattern matching
+        # This avoids hardcoding specific contact type names
         cursor.execute("""
             SELECT COALESCE(MAX(contact_id), 0) as cutoff_id
             FROM contact c
             JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
             WHERE 
-                -- Must be marked as closed or zy
-                ct.contact_type IN ('Closed', 'zy')
+                -- Flexible pattern matching for closed/inactive communities
+                (
+                    LOWER(ct.contact_type) LIKE '%clos%'
+                    OR LOWER(ct.contact_type) LIKE '%inact%'
+                    OR LOWER(ct.contact_type) LIKE '%term%'
+                    OR LOWER(ct.contact_type) LIKE '%cancel%'
+                    OR LOWER(ct.contact_type) LIKE '%end%'
+                    OR LOWER(ct.contact_type) LIKE '%dead%'
+                )
                 
                 -- Community not updated in 7 years
                 AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
@@ -238,7 +246,14 @@ class CutoffIdentifier:
             FROM contact c
             JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
             WHERE 
-                ct.contact_type IN ('Closed', 'zy')
+                (
+                    LOWER(ct.contact_type) LIKE '%clos%'
+                    OR LOWER(ct.contact_type) LIKE '%inact%'
+                    OR LOWER(ct.contact_type) LIKE '%term%'
+                    OR LOWER(ct.contact_type) LIKE '%cancel%'
+                    OR LOWER(ct.contact_type) LIKE '%end%'
+                    OR LOWER(ct.contact_type) LIKE '%dead%'
+                )
                 AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
                 AND NOT EXISTS (SELECT 1 FROM tenant t WHERE t.object_id = c.contact_id AND t.object_type_id = 49 AND (t.to_date IS NULL OR t.to_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR)))
                 AND NOT EXISTS (SELECT 1 FROM contact_batch cb JOIN batch b ON cb.batch_id = b.batch_id WHERE cb.contact_id = c.contact_id AND b.created_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR))
