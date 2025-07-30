@@ -136,9 +136,9 @@ AND (
 -- COMMUNITY CUTOFF (7 years - Closed/ZY communities)
 -- =============================================================================
 
--- Find communities with no recent activity (flexible contact type matching)
--- NOTE: This query needs to be customized based on actual contact types in your database
--- Run check-contact-types.sql first to identify the correct contact types for closed communities
+-- Find closed communities and ZY communities (performance optimized)
+-- Based on actual contact types: Client, Prospect, Closed
+-- ZY communities are identified by name starting with "ZY"
 SELECT 
     'COMMUNITY_CUTOFF' as cutoff_type,
     COALESCE(MAX(contact_id), 0) as cutoff_id,
@@ -147,14 +147,10 @@ SELECT
 FROM contact c
 JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
 WHERE 
-    -- CUSTOMIZE THIS: Replace with actual contact types for closed/inactive communities
-    -- Examples of what to look for: 'Closed', 'Inactive', 'Terminated', 'Cancelled', etc.
+    -- Communities marked as Closed OR have ZY prefix (indicating they were zy'd)
     (
-        LOWER(ct.contact_type) LIKE '%clos%'
-        OR LOWER(ct.contact_type) LIKE '%inact%'
-        OR LOWER(ct.contact_type) LIKE '%term%'
-        OR LOWER(ct.contact_type) LIKE '%cancel%'
-        -- Add more patterns based on your actual contact types
+        ct.contact_type = 'Closed'
+        OR LEFT(c.contact_name, 2) = 'ZY'
     )
     
     -- Community itself hasn't been updated in 7 years
@@ -230,14 +226,14 @@ SELECT
 SELECT 
     'contact_communities' as table_name,
     (SELECT COALESCE(MAX(contact_id), 0) FROM contact c JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
-     WHERE (LOWER(ct.contact_type) LIKE '%clos%' OR LOWER(ct.contact_type) LIKE '%inact%' OR LOWER(ct.contact_type) LIKE '%term%' OR LOWER(ct.contact_type) LIKE '%cancel%')
+     WHERE (ct.contact_type = 'Closed' OR LEFT(c.contact_name, 2) = 'ZY')
      AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
      AND NOT EXISTS (SELECT 1 FROM tenant t WHERE t.object_id = c.contact_id AND t.object_type_id = 49 AND (t.to_date IS NULL OR t.to_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR)))
      AND NOT EXISTS (SELECT 1 FROM contact_batch cb JOIN batch b ON cb.batch_id = b.batch_id WHERE cb.contact_id = c.contact_id AND b.created_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR))
      AND NOT EXISTS (SELECT 1 FROM community_logical_unit_attribute clua JOIN community_logical_unit_attribute_type cluat ON clua.logical_unit_attribute_type_id = cluat.logical_unit_attribute_type_id WHERE clua.logical_unit_id = c.object_id AND cluat.logical_unit_attribute_type = 'Legal Hold' AND clua.val_integer = 1)
     ) as cutoff_id,
     (SELECT COUNT(*) FROM contact c JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
-     WHERE (LOWER(ct.contact_type) LIKE '%clos%' OR LOWER(ct.contact_type) LIKE '%inact%' OR LOWER(ct.contact_type) LIKE '%term%' OR LOWER(ct.contact_type) LIKE '%cancel%')
+     WHERE (ct.contact_type = 'Closed' OR LEFT(c.contact_name, 2) = 'ZY')
      AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
      AND NOT EXISTS (SELECT 1 FROM tenant t WHERE t.object_id = c.contact_id AND t.object_type_id = 49 AND (t.to_date IS NULL OR t.to_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR)))
      AND NOT EXISTS (SELECT 1 FROM contact_batch cb JOIN batch b ON cb.batch_id = b.batch_id WHERE cb.contact_id = c.contact_id AND b.created_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR))

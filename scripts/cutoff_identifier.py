@@ -188,25 +188,22 @@ class CutoffIdentifier:
     def identify_community_cutoff(self) -> Tuple[int, int, bool]:
         """
         Identify cutoff for closed communities (7 years)
+        Based on actual contact types: Client, Prospect, Closed
+        ZY communities are identified by name starting with "ZY"
         Returns: (cutoff_id, estimated_deletions, is_safe)
         """
         cursor = self.db.cursor()
         
-        # Find closed communities using flexible pattern matching
-        # This avoids hardcoding specific contact type names
+        # Find closed communities and ZY communities (performance optimized)
         cursor.execute("""
             SELECT COALESCE(MAX(contact_id), 0) as cutoff_id
             FROM contact c
             JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
             WHERE 
-                -- Flexible pattern matching for closed/inactive communities
+                -- Communities marked as Closed OR have ZY prefix (indicating they were zy'd)
                 (
-                    LOWER(ct.contact_type) LIKE '%clos%'
-                    OR LOWER(ct.contact_type) LIKE '%inact%'
-                    OR LOWER(ct.contact_type) LIKE '%term%'
-                    OR LOWER(ct.contact_type) LIKE '%cancel%'
-                    OR LOWER(ct.contact_type) LIKE '%end%'
-                    OR LOWER(ct.contact_type) LIKE '%dead%'
+                    ct.contact_type = 'Closed'
+                    OR LEFT(c.contact_name, 2) = 'ZY'
                 )
                 
                 -- Community not updated in 7 years
@@ -240,19 +237,15 @@ class CutoffIdentifier:
         """)
         cutoff_id = cursor.fetchone()[0]
         
-        # Count closed communities
+        # Count closed and ZY communities
         cursor.execute("""
             SELECT COUNT(*) as closed_count
             FROM contact c
             JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
             WHERE 
                 (
-                    LOWER(ct.contact_type) LIKE '%clos%'
-                    OR LOWER(ct.contact_type) LIKE '%inact%'
-                    OR LOWER(ct.contact_type) LIKE '%term%'
-                    OR LOWER(ct.contact_type) LIKE '%cancel%'
-                    OR LOWER(ct.contact_type) LIKE '%end%'
-                    OR LOWER(ct.contact_type) LIKE '%dead%'
+                    ct.contact_type = 'Closed'
+                    OR LEFT(c.contact_name, 2) = 'ZY'
                 )
                 AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
                 AND NOT EXISTS (SELECT 1 FROM tenant t WHERE t.object_id = c.contact_id AND t.object_type_id = 49 AND (t.to_date IS NULL OR t.to_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR)))
@@ -264,7 +257,7 @@ class CutoffIdentifier:
         # For communities, we assume it's safe if we found any
         is_safe = True
         
-        self.logger.info(f"Community cutoff: ID {cutoff_id}, {estimated_deletions} closed communities")
+        self.logger.info(f"Community cutoff: ID {cutoff_id}, {estimated_deletions} closed/ZY communities")
         
         return cutoff_id, estimated_deletions, is_safe
         
