@@ -76,11 +76,19 @@
 - [x] ✅ Created user-friendly orchestration scripts
 - [x] ✅ **CONTACT TYPE FIX**: Fixed community identification logic to use flexible pattern matching instead of hardcoded 'zy' type
 - [x] ✅ **FINAL COMMUNITY LOGIC**: Updated to use actual contact types (Client/Prospect/Closed) and ZY name prefix without LIKE operators for performance
+- [x] ✅ **FOREIGN KEY ANALYSIS**: Completed comprehensive analysis of explicit and implicit EAV relationships
+- [x] ✅ **DELETION ORDER STRATEGY**: Created proper dependency management and polymorphic cascade deletion logic
 
-## Next Steps
-1. **Test on Production (Read-Only)**: Run cutoff identification to get actual numbers
-2. **Validate Approach**: Perform dry-run to validate deletion logic
-3. **Gradual Rollout**: Start with readings table (largest, safest to test)
-4. **Monitor and Optimize**: Adjust batch sizes based on performance
-5. **Full Deployment**: Process all tables according to dependency order
+## Next Steps - IMMEDIATE ACTIONS REQUIRED
+1. **🔥 TODAY: Run EAV Discovery Queries (Read-Only)**: Execute discover-eav-relationships.sql on production to map polymorphic relationships
+2. **🔥 THIS WEEK: Test Cutoff Identification**: Run cutoff identification to get actual numbers and validate logic
+3. **📋 NEXT WEEK: Test Enhanced Deletion Logic**: Validate polymorphic cascade deletion on database copy
+4. **🚀 FOLLOWING WEEK: Production Pilot**: Start with readings table cleanup in small batches
+5. **📈 FULL ROLLOUT: Complete All Tables**: Process all tables according to dependency order
+
+## Ready for Production Discovery Phase
+- All foundational work completed
+- Discovery queries ready to run
+- Enhanced deletion logic implemented
+- Comprehensive safety measures in place
 
