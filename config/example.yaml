@@ -1,0 +1,58 @@
+# NES Database Cleanup Configuration
+# Copy this file and customize for your environment
+
+database:
+  host: "localhost"
+  user: "cleanup_user"
+  password: "your_secure_password"
+  database: "nes"
+
+# Safety settings
+safety:
+  max_deletion_percentage: 50  # Never delete more than 50% of a table
+  require_confirmation: true
+  backup_required: true
+  dry_run_first: true
+
+# Batch sizes for different table types
+batch_sizes:
+  # Large tables (>100M rows)
+  reading: 1000
+  email_attachment: 1000
+  address: 1000
+  invoice_detail: 1000
+  
+  # Medium tables (1M-100M rows)
+  email: 5000
+  contact: 5000
+  tenant: 5000
+  
+  # Small tables (<1M rows)
+  phone: 10000
+  note: 10000
+
+# Processing delays (seconds between batches)
+delays:
+  reading: 0.1      # Minimal delay for large tables
+  contact: 0.2      # Slightly longer for complex operations
+  default: 0.1
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "/var/log/nes_cleanup.log"
+  max_file_size_mb: 100
+  backup_count: 5
+
+# Monitoring and alerting
+monitoring:
+  progress_report_interval: 1000  # Report progress every N batches
+  email_alerts: false
+  alert_email: "admin@example.com"
+  
+# Time-based cutoffs
+cutoffs:
+  reading_age_years: 2
+  account_age_years: 7
+  community_age_years: 7
+
