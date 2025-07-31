@@ -123,7 +123,8 @@ execute_deletion() {
         table_arg="--table $table"
     fi
     
-    python3 "$SCRIPT_DIR/batch_deleter.py" \
+    # Use production batch deleter for actual deletion
+    python3 "$SCRIPT_DIR/production_batch_deleter.py" \
         --host "$DB_HOST" \
         --user "$DB_USER" \
         --password "$DB_PASSWORD" \
