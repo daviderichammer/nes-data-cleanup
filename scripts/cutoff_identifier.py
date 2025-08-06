@@ -4,12 +4,20 @@ NES Database Cleanup - Cutoff Identifier
 This script identifies the autoincrement ID cutoffs for safe data deletion.
 """
 
-import mysql.connector
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Tuple, Optional
 import argparse
+import mysql.connector
+from datetime import datetime, timedelta
+from typing import Dict, Tuple
+from decimal import Decimal
+
+class DecimalEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle Decimal objects"""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
 
 class CutoffIdentifier:
     def __init__(self, db_config: dict):
@@ -168,7 +176,7 @@ class CutoffIdentifier:
             self.logger.info("Analyzing ZY communities...")
             cursor.execute("""
                 SELECT COUNT(*) FROM contact 
-                WHERE LEFT(contact_name, 2) = 'ZY'
+                WHERE LEFT(company_name, 2) = 'ZY'
                 AND last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
             """)
             zy_communities = cursor.fetchone()[0]
@@ -190,7 +198,7 @@ class CutoffIdentifier:
                 JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
                 WHERE (
                     ct.contact_type = 'Closed'           -- Explicitly closed communities  
-                    OR LEFT(c.contact_name, 2) = 'ZY'   -- ZY'd communities
+                    OR LEFT(c.company_name, 2) = 'ZY'   -- ZY'd communities
                 )
                 AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
             """)
@@ -333,7 +341,7 @@ class CutoffIdentifier:
             filename = f"cutoff_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             
         with open(filename, 'w') as f:
-            json.dump(report, f, indent=2)
+            json.dump(report, f, indent=2, cls=DecimalEncoder)
             
         self.logger.info(f"Report saved to {filename}")
         return filename
