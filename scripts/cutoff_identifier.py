@@ -31,9 +31,19 @@ class CutoffIdentifier:
         self.logger = logging.getLogger(__name__)
         
     def connect(self):
-        """Connect to database"""
+        """Connect to database with compatibility for older MySQL servers"""
         try:
-            self.db = mysql.connector.connect(**self.db_config)
+            # Add charset compatibility for older MySQL servers
+            db_config = self.db_config.copy()
+            
+            # Use utf8 instead of utf8mb4 for older MySQL compatibility
+            db_config['charset'] = 'utf8'
+            db_config['use_unicode'] = True
+            
+            # Disable SSL warnings for older servers
+            db_config['autocommit'] = True
+            
+            self.db = mysql.connector.connect(**db_config)
             self.logger.info("Connected to database successfully")
         except mysql.connector.Error as e:
             self.logger.error(f"Database connection failed: {e}")
