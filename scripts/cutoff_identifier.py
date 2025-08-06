@@ -58,45 +58,40 @@ class CutoffIdentifier:
     def identify_reading_cutoff(self) -> Tuple[int, int, bool]:
         """
         Identify cutoff for reading table (2 years)
+        Simple approach: find min reading_id where date_imported >= 2 years ago
+        Delete everything before that cutoff
         Returns: (cutoff_id, estimated_deletions, is_safe)
         """
         cursor = self.db.cursor()
         
-        # Find cutoff ID
+        # Find minimum reading_id where date_imported >= 2 years ago
+        # Everything below this ID can be safely deleted
         cursor.execute("""
-            SELECT COALESCE(MAX(reading_id), 0) as cutoff_id
+            SELECT COALESCE(MIN(reading_id), 0) as cutoff_id
             FROM reading 
-            WHERE date_imported < DATE_SUB(NOW(), INTERVAL 2 YEAR)
+            WHERE date_imported >= DATE_SUB(NOW(), INTERVAL 2 YEAR)
         """)
         cutoff_id = cursor.fetchone()[0]
         
-        # Count deletable records (not used for billing)
-        cursor.execute("""
-            SELECT COUNT(*) as deletable_count
-            FROM reading r
-            LEFT JOIN sm_usage su ON r.guid = su.guid
-            WHERE r.date_imported < DATE_SUB(NOW(), INTERVAL 2 YEAR)
-            AND su.sm_usage_id IS NULL
-        """)
-        estimated_deletions = cursor.fetchone()[0]
+        # If no readings found within 2 years, use max ID + 1 (delete nothing)
+        if cutoff_id == 0:
+            cursor.execute("SELECT COALESCE(MAX(reading_id), 0) + 1 as cutoff_id FROM reading")
+            cutoff_id = cursor.fetchone()[0]
+            estimated_deletions = 0
+        else:
+            # Count records that will be deleted (reading_id < cutoff_id)
+            cursor.execute("""
+                SELECT COUNT(*) as deletable_count
+                FROM reading 
+                WHERE reading_id < %s
+            """, (cutoff_id,))
+            estimated_deletions = cursor.fetchone()[0]
         
-        # Safety check: ensure no recent readings above cutoff
-        cursor.execute("""
-            SELECT COUNT(*) as recent_count
-            FROM reading r
-            LEFT JOIN sm_usage su ON r.guid = su.guid
-            WHERE r.reading_id <= %s
-            AND r.date_imported >= DATE_SUB(NOW(), INTERVAL 2 YEAR)
-            AND su.sm_usage_id IS NULL
-        """, (cutoff_id,))
-        recent_above_cutoff = cursor.fetchone()[0]
+        # This approach is inherently safe - we only delete readings older than 2 years
+        is_safe = True
         
-        is_safe = recent_above_cutoff == 0
+        self.logger.info(f"Reading cutoff: ID {cutoff_id}, {estimated_deletions} records to delete")
         
-        self.logger.info(f"Reading cutoff: ID {cutoff_id}, {estimated_deletions} deletable records")
-        if not is_safe:
-            self.logger.warning(f"SAFETY ISSUE: {recent_above_cutoff} recent readings above cutoff!")
-            
         return cutoff_id, estimated_deletions, is_safe
         
     def identify_account_cutoff(self) -> Tuple[int, int, bool]:

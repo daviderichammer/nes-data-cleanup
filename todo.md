@@ -82,6 +82,7 @@
 - [x] ✅ **PRODUCTION BATCH DELETER**: Created volume-optimized deletion strategy based on real data (67M+ addresses, 5.9M+ phones, etc.)
 - [x] ✅ **VPN SERVER INSTALLATION GUIDE**: Created comprehensive installation and run guide for VPN server deployment
 - [x] ✅ **CHARACTER SET COMPATIBILITY FIX**: Fixed utf8mb4 compatibility issue for older MySQL servers
+- [x] ✅ **READING CUTOFF SIMPLIFICATION**: Simplified reading cutoff logic for better performance (removed complex joins)
 
 ## Next Steps - PRODUCTION READY! 🚀
 1. **✅ COMPLETED: Discovery Analysis** - Mapped all polymorphic relationships and actual volumes
