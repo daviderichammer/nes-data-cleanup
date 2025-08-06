@@ -194,92 +194,6 @@ class CutoffIdentifier:
         self.logger.info(f"RESULT: Cutoff ID = {cutoff_id}, Deletions = {estimated_deletions:,}, Safe = {is_safe}")
         
         return cutoff_id, estimated_deletions, is_safe
-        """, (cutoff_id,))
-        recent_activity_above_cutoff = cursor.fetchone()[0]
-        
-        is_safe = recent_activity_above_cutoff == 0
-        
-        self.logger.info(f"Account cutoff: ID {cutoff_id}, {estimated_deletions} inactive accounts")
-        if not is_safe:
-            self.logger.warning(f"SAFETY ISSUE: {recent_activity_above_cutoff} accounts with recent activity above cutoff!")
-            
-        return cutoff_id, estimated_deletions, is_safe
-        
-    def identify_community_cutoff(self) -> Tuple[int, int, bool]:
-        """
-        Identify cutoff for closed communities (7 years)
-        Based on actual contact types: Client, Prospect, Closed
-        ZY communities are identified by name starting with "ZY"
-        Returns: (cutoff_id, estimated_deletions, is_safe)
-        """
-        cursor = self.db.cursor()
-        
-        # Find closed communities and ZY communities (performance optimized)
-        cursor.execute("""
-            SELECT COALESCE(MAX(contact_id), 0) as cutoff_id
-            FROM contact c
-            JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
-            WHERE 
-                -- Communities marked as Closed OR have ZY prefix (indicating they were zy'd)
-                (
-                    ct.contact_type = 'Closed'
-                    OR LEFT(c.contact_name, 2) = 'ZY'
-                )
-                
-                -- Community not updated in 7 years
-                AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
-                
-                -- No active tenants
-                AND NOT EXISTS (
-                    SELECT 1 FROM tenant t 
-                    WHERE t.object_id = c.contact_id 
-                    AND t.object_type_id = 49 
-                    AND (t.to_date IS NULL OR t.to_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR))
-                )
-                
-                -- No recent batches
-                AND NOT EXISTS (
-                    SELECT 1 FROM contact_batch cb
-                    JOIN batch b ON cb.batch_id = b.batch_id
-                    WHERE cb.contact_id = c.contact_id
-                    AND b.created_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR)
-                )
-                
-                -- No legal hold
-                AND NOT EXISTS (
-                    SELECT 1 FROM community_logical_unit_attribute clua
-                    JOIN community_logical_unit_attribute_type cluat 
-                        ON clua.logical_unit_attribute_type_id = cluat.logical_unit_attribute_type_id
-                    WHERE clua.logical_unit_id = c.object_id
-                    AND cluat.logical_unit_attribute_type = 'Legal Hold'
-                    AND clua.val_integer = 1
-                )
-        """)
-        cutoff_id = cursor.fetchone()[0]
-        
-        # Count closed and ZY communities
-        cursor.execute("""
-            SELECT COUNT(*) as closed_count
-            FROM contact c
-            JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
-            WHERE 
-                (
-                    ct.contact_type = 'Closed'
-                    OR LEFT(c.contact_name, 2) = 'ZY'
-                )
-                AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
-                AND NOT EXISTS (SELECT 1 FROM tenant t WHERE t.object_id = c.contact_id AND t.object_type_id = 49 AND (t.to_date IS NULL OR t.to_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR)))
-                AND NOT EXISTS (SELECT 1 FROM contact_batch cb JOIN batch b ON cb.batch_id = b.batch_id WHERE cb.contact_id = c.contact_id AND b.created_date >= DATE_SUB(NOW(), INTERVAL 7 YEAR))
-                AND NOT EXISTS (SELECT 1 FROM community_logical_unit_attribute clua JOIN community_logical_unit_attribute_type cluat ON clua.logical_unit_attribute_type_id = cluat.logical_unit_attribute_type_id WHERE clua.logical_unit_id = c.object_id AND cluat.logical_unit_attribute_type = 'Legal Hold' AND clua.val_integer = 1)
-        """)
-        estimated_deletions = cursor.fetchone()[0]
-        
-        # For communities, we assume it's safe if we found any
-        is_safe = True
-        
-        self.logger.info(f"Community cutoff: ID {cutoff_id}, {estimated_deletions} closed/ZY communities")
-        
-        return cutoff_id, estimated_deletions, is_safe
         
     def get_table_stats(self, table_name: str) -> Dict:
         """Get current table statistics"""
@@ -318,13 +232,13 @@ class CutoffIdentifier:
         }
         
         # Identify all cutoffs with verbose progress
-        self.logger.info("Phase 1/3: Reading table analysis...")
+        self.logger.info("Phase 1/2: Reading table analysis...")
         reading_cutoff, reading_deletions, reading_safe = self.identify_reading_cutoff()
         
-        self.logger.info("\nPhase 2/3: Contact table analysis...")
+        self.logger.info("\nPhase 2/2: Contact table analysis...")
         contact_cutoff, contact_deletions, contact_safe = self.identify_contact_cutoff()
         
-        self.logger.info("\nPhase 3/3: Gathering table statistics...")
+        self.logger.info("\nGathering table statistics...")
         # Get table statistics
         for table in ['reading', 'contact', 'email', 'invoice_detail', 'address']:
             self.logger.info(f"Getting statistics for {table} table...")
