@@ -65,45 +65,61 @@ class CutoffIdentifier:
         self.logger.info("=== ANALYZING READING TABLE ===")
         cursor = self.db.cursor()
         
-        # First, get total reading count for context
-        self.logger.info("Getting total reading count...")
-        cursor.execute("SELECT COUNT(*) FROM reading")
-        total_readings = cursor.fetchone()[0]
-        self.logger.info(f"Total readings in database: {total_readings:,}")
+        try:
+            # First, get total reading count for context
+            self.logger.info("Getting total reading count...")
+            cursor.execute("SELECT COUNT(*) FROM reading")
+            total_readings = cursor.fetchone()[0]
+            self.logger.info(f"Total readings in database: {total_readings:,}")
+        except Exception as e:
+            self.logger.error(f"Failed to get total reading count: {e}")
+            return 0, 0, False
         
-        # Find minimum reading_id where date_imported >= 2 years ago
-        # Everything below this ID can be safely deleted
-        self.logger.info("Finding cutoff ID (minimum reading_id where date_imported >= 2 years ago)...")
-        cursor.execute("""
-            SELECT COALESCE(MIN(reading_id), 0) as cutoff_id
-            FROM reading 
-            WHERE date_imported >= DATE_SUB(NOW(), INTERVAL 2 YEAR)
-        """)
-        cutoff_id = cursor.fetchone()[0]
-        self.logger.info(f"Cutoff ID found: {cutoff_id}")
+        try:
+            # Find minimum reading_id where date_imported >= 2 years ago
+            # Everything below this ID can be safely deleted
+            self.logger.info("Finding cutoff ID (minimum reading_id where date_imported >= 2 years ago)...")
+            cursor.execute("""
+                SELECT COALESCE(MIN(reading_id), 0) as cutoff_id
+                FROM reading 
+                WHERE date_imported >= DATE_SUB(NOW(), INTERVAL 2 YEAR)
+            """)
+            cutoff_id = cursor.fetchone()[0]
+            self.logger.info(f"Cutoff ID found: {cutoff_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to find cutoff ID: {e}")
+            return 0, 0, False
         
         # If no readings found within 2 years, use max ID + 1 (delete nothing)
         if cutoff_id == 0:
-            self.logger.warning("No readings found within the last 2 years!")
-            self.logger.info("Getting maximum reading_id to set safe cutoff...")
-            cursor.execute("SELECT COALESCE(MAX(reading_id), 0) + 1 as cutoff_id FROM reading")
-            cutoff_id = cursor.fetchone()[0]
-            estimated_deletions = 0
-            self.logger.info(f"Safe cutoff set to: {cutoff_id} (no deletions will occur)")
+            try:
+                self.logger.warning("No readings found within the last 2 years!")
+                self.logger.info("Getting maximum reading_id to set safe cutoff...")
+                cursor.execute("SELECT COALESCE(MAX(reading_id), 0) + 1 as cutoff_id FROM reading")
+                cutoff_id = cursor.fetchone()[0]
+                estimated_deletions = 0
+                self.logger.info(f"Safe cutoff set to: {cutoff_id} (no deletions will occur)")
+            except Exception as e:
+                self.logger.error(f"Failed to get maximum reading_id: {e}")
+                return 0, 0, False
         else:
-            # Count records that will be deleted (reading_id < cutoff_id)
-            self.logger.info(f"Counting readings that will be deleted (reading_id < {cutoff_id})...")
-            cursor.execute("""
-                SELECT COUNT(*) as deletable_count
-                FROM reading 
-                WHERE reading_id < %s
-            """, (cutoff_id,))
-            estimated_deletions = cursor.fetchone()[0]
-            
-            # Calculate percentage
-            deletion_percentage = (estimated_deletions / total_readings * 100) if total_readings > 0 else 0
-            self.logger.info(f"Readings to be deleted: {estimated_deletions:,} ({deletion_percentage:.1f}% of total)")
-            self.logger.info(f"Readings to be retained: {total_readings - estimated_deletions:,} ({100 - deletion_percentage:.1f}% of total)")
+            try:
+                # Count records that will be deleted (reading_id < cutoff_id)
+                self.logger.info(f"Counting readings that will be deleted (reading_id < {cutoff_id})...")
+                cursor.execute("""
+                    SELECT COUNT(*) as deletable_count
+                    FROM reading 
+                    WHERE reading_id < %s
+                """, (cutoff_id,))
+                estimated_deletions = cursor.fetchone()[0]
+                
+                # Calculate percentage
+                deletion_percentage = (estimated_deletions / total_readings * 100) if total_readings > 0 else 0
+                self.logger.info(f"Readings to be deleted: {estimated_deletions:,} ({deletion_percentage:.1f}% of total)")
+                self.logger.info(f"Readings to be retained: {total_readings - estimated_deletions:,} ({100 - deletion_percentage:.1f}% of total)")
+            except Exception as e:
+                self.logger.error(f"Failed to count deletable readings: {e}")
+                return cutoff_id, 0, False
         
         # This approach is inherently safe - we only delete readings older than 2 years
         is_safe = True
@@ -121,49 +137,69 @@ class CutoffIdentifier:
         self.logger.info("=== ANALYZING CONTACT TABLE ===")
         cursor = self.db.cursor()
         
-        # Get total contact count for context
-        self.logger.info("Getting total contact count...")
-        cursor.execute("SELECT COUNT(*) FROM contact")
-        total_contacts = cursor.fetchone()[0]
-        self.logger.info(f"Total contacts in database: {total_contacts:,}")
+        try:
+            # Get total contact count for context
+            self.logger.info("Getting total contact count...")
+            cursor.execute("SELECT COUNT(*) FROM contact")
+            total_contacts = cursor.fetchone()[0]
+            self.logger.info(f"Total contacts in database: {total_contacts:,}")
+        except Exception as e:
+            self.logger.error(f"Failed to get total contact count: {e}")
+            return 0, 0, False
         
         # Analyze communities (closed and ZY)
-        self.logger.info("Analyzing closed communities...")
-        cursor.execute("""
-            SELECT COUNT(*) FROM contact c 
-            JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id 
-            WHERE ct.contact_type = 'Closed' 
-            AND c.last_modified < DATE_SUB(NOW(), INTERVAL 7 YEAR)
-        """)
-        closed_communities = cursor.fetchone()[0]
-        self.logger.info(f"Closed communities (7+ years old): {closed_communities:,}")
+        closed_communities = 0
+        try:
+            self.logger.info("Analyzing closed communities...")
+            cursor.execute("""
+                SELECT COUNT(*) FROM contact c 
+                JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id 
+                WHERE ct.contact_type = 'Closed' 
+                AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
+            """)
+            closed_communities = cursor.fetchone()[0]
+            self.logger.info(f"Closed communities (7+ years old): {closed_communities:,}")
+        except Exception as e:
+            self.logger.error(f"Failed to analyze closed communities: {e}")
+            self.logger.info("Closed communities analysis failed, continuing with ZY analysis...")
         
-        self.logger.info("Analyzing ZY communities...")
-        cursor.execute("""
-            SELECT COUNT(*) FROM contact 
-            WHERE LEFT(contact_name, 2) = 'ZY'
-            AND last_modified < DATE_SUB(NOW(), INTERVAL 7 YEAR)
-        """)
-        zy_communities = cursor.fetchone()[0]
-        self.logger.info(f"ZY communities (7+ years old): {zy_communities:,}")
+        zy_communities = 0
+        try:
+            self.logger.info("Analyzing ZY communities...")
+            cursor.execute("""
+                SELECT COUNT(*) FROM contact 
+                WHERE LEFT(contact_name, 2) = 'ZY'
+                AND last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
+            """)
+            zy_communities = cursor.fetchone()[0]
+            self.logger.info(f"ZY communities (7+ years old): {zy_communities:,}")
+        except Exception as e:
+            self.logger.error(f"Failed to analyze ZY communities: {e}")
+            self.logger.info("ZY communities analysis failed, continuing...")
         
         total_communities = closed_communities + zy_communities
         self.logger.info(f"Total communities for deletion: {total_communities:,}")
         
         # Find cutoff ID for communities
-        self.logger.info("Finding cutoff ID for communities...")
-        cursor.execute("""
-            SELECT COALESCE(MAX(contact_id), 0) as cutoff_id
-            FROM contact c
-            JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
-            WHERE (
-                ct.contact_type = 'Closed'           -- Explicitly closed communities  
-                OR LEFT(c.contact_name, 2) = 'ZY'   -- ZY'd communities
-            )
-            AND c.last_modified < DATE_SUB(NOW(), INTERVAL 7 YEAR)
-        """)
-        cutoff_id = cursor.fetchone()[0]
-        self.logger.info(f"Community cutoff ID: {cutoff_id}")
+        cutoff_id = 0
+        try:
+            self.logger.info("Finding cutoff ID for communities...")
+            cursor.execute("""
+                SELECT COALESCE(MAX(contact_id), 0) as cutoff_id
+                FROM contact c
+                JOIN contact_type ct ON c.contact_type_id = ct.contact_type_id
+                WHERE (
+                    ct.contact_type = 'Closed'           -- Explicitly closed communities  
+                    OR LEFT(c.contact_name, 2) = 'ZY'   -- ZY'd communities
+                )
+                AND c.last_updated_on < DATE_SUB(NOW(), INTERVAL 7 YEAR)
+            """)
+            cutoff_id = cursor.fetchone()[0]
+            self.logger.info(f"Community cutoff ID: {cutoff_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to find cutoff ID for communities: {e}")
+            # If we can't find cutoff ID, use a safe default
+            cutoff_id = 0
         
         # Count total deletable communities
         estimated_deletions = total_communities
@@ -174,21 +210,27 @@ class CutoffIdentifier:
         self.logger.info(f"Contacts to be retained: {total_contacts - estimated_deletions:,} ({100 - deletion_percentage:.1f}% of total)")
         
         # Safety check: verify no recent activity above cutoff
-        self.logger.info("Performing safety check for recent activity...")
-        cursor.execute("""
-            SELECT COUNT(*) as recent_activity_count
-            FROM contact c
-            WHERE c.contact_id <= %s
-            AND c.last_modified >= DATE_SUB(NOW(), INTERVAL 7 YEAR)
-        """, (cutoff_id,))
-        recent_activity_count = cursor.fetchone()[0]
-        
-        is_safe = recent_activity_count == 0
-        
-        if is_safe:
-            self.logger.info("✓ Safety check passed: No recent activity found above cutoff")
-        else:
-            self.logger.warning(f"⚠ Safety check failed: {recent_activity_count} contacts with recent activity above cutoff")
+        is_safe = True
+        if cutoff_id > 0:
+            try:
+                self.logger.info("Performing safety check for recent activity...")
+                cursor.execute("""
+                    SELECT COUNT(*) as recent_activity_count
+                    FROM contact c
+                    WHERE c.contact_id <= %s
+                    AND c.last_updated_on >= DATE_SUB(NOW(), INTERVAL 7 YEAR)
+                """, (cutoff_id,))
+                recent_activity_count = cursor.fetchone()[0]
+                
+                is_safe = recent_activity_count == 0
+                
+                if is_safe:
+                    self.logger.info("✓ Safety check passed: No recent activity found above cutoff")
+                else:
+                    self.logger.warning(f"⚠ Safety check failed: {recent_activity_count} contacts with recent activity above cutoff")
+            except Exception as e:
+                self.logger.error(f"Failed to perform safety check: {e}")
+                is_safe = False
         
         self.logger.info("=== CONTACT ANALYSIS COMPLETE ===")
         self.logger.info(f"RESULT: Cutoff ID = {cutoff_id}, Deletions = {estimated_deletions:,}, Safe = {is_safe}")
@@ -198,24 +240,28 @@ class CutoffIdentifier:
     def get_table_stats(self, table_name: str) -> Dict:
         """Get current table statistics"""
         cursor = self.db.cursor()
-        cursor.execute("""
-            SELECT 
-                table_rows,
-                ROUND(data_length/1024/1024, 2) as data_mb,
-                ROUND(index_length/1024/1024, 2) as index_mb,
-                ROUND((data_length+index_length)/1024/1024, 2) as total_mb
-            FROM information_schema.tables 
-            WHERE table_schema = 'nes' AND table_name = %s
-        """, (table_name,))
+        try:
+            cursor.execute("""
+                SELECT 
+                    table_rows,
+                    ROUND(data_length/1024/1024, 2) as data_mb,
+                    ROUND(index_length/1024/1024, 2) as index_mb,
+                    ROUND((data_length+index_length)/1024/1024, 2) as total_mb
+                FROM information_schema.tables 
+                WHERE table_schema = 'nes' AND table_name = %s
+            """, (table_name,))
+            
+            result = cursor.fetchone()
+            if result:
+                return {
+                    'rows': result[0],
+                    'data_mb': result[1],
+                    'index_mb': result[2],
+                    'total_mb': result[3]
+                }
+        except Exception as e:
+            self.logger.error(f"Failed to get statistics for table {table_name}: {e}")
         
-        result = cursor.fetchone()
-        if result:
-            return {
-                'rows': result[0],
-                'data_mb': result[1],
-                'index_mb': result[2],
-                'total_mb': result[3]
-            }
         return {}
         
     def generate_cutoff_report(self) -> Dict:
@@ -231,18 +277,30 @@ class CutoffIdentifier:
             'safety_status': 'UNKNOWN'
         }
         
-        # Identify all cutoffs with verbose progress
+        # Identify all cutoffs with verbose progress and error handling
         self.logger.info("Phase 1/2: Reading table analysis...")
-        reading_cutoff, reading_deletions, reading_safe = self.identify_reading_cutoff()
+        try:
+            reading_cutoff, reading_deletions, reading_safe = self.identify_reading_cutoff()
+        except Exception as e:
+            self.logger.error(f"Reading analysis failed: {e}")
+            reading_cutoff, reading_deletions, reading_safe = 0, 0, False
         
         self.logger.info("\nPhase 2/2: Contact table analysis...")
-        contact_cutoff, contact_deletions, contact_safe = self.identify_contact_cutoff()
+        try:
+            contact_cutoff, contact_deletions, contact_safe = self.identify_contact_cutoff()
+        except Exception as e:
+            self.logger.error(f"Contact analysis failed: {e}")
+            contact_cutoff, contact_deletions, contact_safe = 0, 0, False
         
         self.logger.info("\nGathering table statistics...")
-        # Get table statistics
+        # Get table statistics with error handling
         for table in ['reading', 'contact', 'email', 'invoice_detail', 'address']:
-            self.logger.info(f"Getting statistics for {table} table...")
-            report['table_stats'][table] = self.get_table_stats(table)
+            try:
+                self.logger.info(f"Getting statistics for {table} table...")
+                report['table_stats'][table] = self.get_table_stats(table)
+            except Exception as e:
+                self.logger.error(f"Failed to get statistics for {table} table: {e}")
+                report['table_stats'][table] = {}
         
         # Store cutoff information
         self.logger.info("\nCompiling final report...")
